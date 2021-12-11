@@ -1,7 +1,7 @@
 
 import torch.nn as nn
 import torch.nn.functional as F
-class MLPProjectionHeader(nn.Module):
+class MLPProjectionHead(nn.Module):
     def __init__(self, input_dim, output_dim=256) -> None:
         super().__init__()
         self.l1 = nn.Linear(input_dim, input_dim)
@@ -19,11 +19,10 @@ class OutputLayer(nn.Module):
     def forward(self, x):
         return self.l(x)
         
-class CIFAR10Encoder(nn.Module):
+class CifarEncoder(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
-        self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
         
@@ -31,10 +30,19 @@ class CIFAR10Encoder(nn.Module):
         self.fc2 = nn.Linear(120, 84)
 
     def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = self.pool(self.relu(self.conv2(x)))
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
         x = x.view(-1, 16 * 5 * 5)
 
-        x = self.relu(self.fc1(x))
-        x = self.relu(self.fc2(x))
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
         return x
+
+class CifarNet(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.encoder = CifarEncoder()
+        self.projection_head = MLPProjectionHead(84, 256)
+        self.output_layer = OutputLayer(256, 10)
+    def forward(self, x):
+        return self.output_layer(self.projection_head(self.encoder(x)))
