@@ -1,4 +1,3 @@
-
 import torch.nn as nn
 import torch.nn.functional as F
 class MLPProjectionHead(nn.Module):
@@ -37,12 +36,19 @@ class CifarEncoder(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         return x
-
-class CifarNet(nn.Module):
+class Cifar10Net(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.encoder = CifarEncoder()
         self.projection_head = MLPProjectionHead(84, 256)
         self.output_layer = OutputLayer(256, 10)
     def forward(self, x):
-        return self.output_layer(self.projection_head(self.encoder(x)))
+        proj = self.projection_head(self.encoder(x))
+        out = self.output_layer(proj)
+        return (proj, out)
+
+class Cifar100Net(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+    def forward(self, x):
+        return x
