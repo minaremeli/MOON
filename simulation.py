@@ -1,31 +1,15 @@
-import numpy as np
 from logging import INFO
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import ray
-import torch
 
-import flwr as fl
 from flwr.client.client import Client
 from flwr.common.logger import log
-from flwr.server.app import _fl, _init_defaults
-from flwr.server.strategy import Strategy
+from flwr.server.strategy import FedAvg, Strategy
 from flwr.simulation.ray_transport.ray_client_proxy import RayClientProxy
-from flwr.common import parameters_to_weights
-from collections import OrderedDict
+from flwr.server.client_manager import SimpleClientManager
+from server import Server, save_metrics, save_model
 
-
-from flwr.server.server import Server
-
-def set_weights(model: torch.nn.ModuleList, weights: fl.common.Weights) -> None:
-    """Set model weights from a list of NumPy ndarrays."""
-    state_dict = OrderedDict(
-        {
-            k: torch.tensor(np.atleast_1d(v))
-            for k, v in zip(model.state_dict().keys(), weights)
-        }
-    )
-    model.load_state_dict(state_dict, strict=True)
 
 def start_simulation(  # pylint: disable=too-many-arguments
     *,
@@ -105,8 +89,8 @@ def start_simulation(  # pylint: disable=too-many-arguments
     )
 
     # Initialize server and server config
-    config = {"num_rounds": num_rounds}
-    initialized_server, initialized_config = _init_defaults(None, config, strategy)
+    config = {"num_rounds": num_rounds, "path_to_save_metrics": path_to_save_metrics}
+    initialized_server, initialized_config = _init_defaults(None, config, strategy, model)
     log(
         INFO,
         "Starting Flower simulation running: %s",
@@ -127,30 +111,41 @@ def start_simulation(  # pylint: disable=too-many-arguments
     _fl(
         server=initialized_server,
         config=initialized_config,
-        path_to_save_metrics = path_to_save_metrics,
         model = model
     )
 
+def _init_defaults(
+    server: Optional[Server],
+    config: Optional[Dict[str, int]],
+    strategy: Optional[Strategy],
+    model
+) -> Tuple[Server, Dict[str, int]]:
+    # Create server instance if none was given
+    if server is None:
+        client_manager = SimpleClientManager()
+        if strategy is None:
+            strategy = FedAvg()
+        server = Server(client_manager=client_manager, strategy=strategy, path_to_save_metrics = config["path_to_save_metrics"], model=model)
+
+    # Set default config values
+    if config is None:
+        config = {}
+    if "num_rounds" not in config:
+        config["num_rounds"] = 1
+
+    return server, config
+
+
+
 def _fl(
-    server: Server, config: Dict[str, int], path_to_save_metrics, model
+    server: Server, config: Dict[str, int], model
 ) -> None:
     # Fit model
     hist = server.fit(num_rounds=config["num_rounds"])
-    accs_distributed = np.array([])
-    accs_centralized = np.array([])
-    print(hist.metrics_distributed)
-    for (_,acc) in hist.metrics_distributed['accuracy']:
-        np.append(accs_distributed, acc)
-    for (_,acc) in hist.metrics_centralized['accuracy']:
-        np.append(accs_centralized,acc)
+    save_metrics(hist, config["path_to_save_metrics"])
+    save_model(server.parameters, model, config["path_to_save_metrics"])
 
-    np.save(path_to_save_metrics / "accs_distributed.npy", accs_distributed)
-    np.save(path_to_save_metrics / "accs_centralized.npy", accs_centralized)
     
-    final_weights = parameters_to_weights(server.parameters)
-    set_weights(model, final_weights)
-    
-    torch.save(model.state_dict(), path_to_save_metrics / "final_model.pt")
     log(INFO, "app_fit: losses_distributed %s", str(hist.losses_distributed))
     log(INFO, "app_fit: metrics_distributed %s", str(hist.metrics_distributed))
     log(INFO, "app_fit: losses_centralized %s", str(hist.losses_centralized))

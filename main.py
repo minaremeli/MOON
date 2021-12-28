@@ -15,28 +15,31 @@ import copy
 
 
 
-def calc_loss(local_net, previous_net, global_net, x, target, mu, temperature, device):
-    cos=torch.nn.CosineSimilarity(dim=-1)
+def calc_loss(local_net, previous_net, global_net, x, target, mu, temperature, device, strategy):
+    
     criterion = torch.nn.CrossEntropyLoss()
     pro1, out = local_net(x)
-    pro2, _ = global_net(x)
-    pro3, _ = previous_net(x)
-
-    posi = cos(pro1, pro2)
-    nega = cos(pro1, pro3)
-
-    logits = posi.reshape(-1,1)
-    logits = torch.cat((logits, nega.reshape(-1,1)), dim=1).to(device)
-    logits /= temperature
-
     loss1 = criterion(out, target)
-    t = torch.zeros(x.size(0)).to(device).long()
-    loss2 = mu * criterion(logits, t)
+    loss2 = 0
+    if strategy == 'moon':
+        pro2, _ = global_net(x)
+        pro3, _ = previous_net(x)
+
+        cos=torch.nn.CosineSimilarity(dim=-1)
+        posi = cos(pro1, pro2)
+        nega = cos(pro1, pro3)
+
+        logits = posi.reshape(-1,1)
+        logits = torch.cat((logits, nega.reshape(-1,1)), dim=1).to(device)
+        logits /= temperature
+
+        t = torch.zeros(x.size(0)).to(device).long()
+        loss2 = mu * criterion(logits, t)
+
     loss = loss1 + loss2
-    
     return loss, out
 
-def train(local_net, previous_net, global_net, trainloader, epochs, mu, temperature, device: str):
+def train(local_net, previous_net, global_net, trainloader, epochs, mu, temperature, device: str, strategy):
     local_net.train()
     optimizer = torch.optim.SGD(local_net.parameters(), lr=0.01, momentum=0.9, weight_decay=0.00001)
     for _ in range(epochs):
@@ -44,7 +47,7 @@ def train(local_net, previous_net, global_net, trainloader, epochs, mu, temperat
             optimizer.zero_grad()
 
             x, target = x.to(device), target.to(device)
-            loss, _ = calc_loss(local_net, previous_net, global_net, x, target, mu, temperature, device)
+            loss, _ = calc_loss(local_net, previous_net, global_net, x, target, mu, temperature, device, strategy)
             
             loss.backward()
             optimizer.step()
@@ -73,17 +76,17 @@ def configure_net_for_eval(net):
 # Flower client that will be spawned by Ray
 # Adapted from Pytorch quickstart example
 class CifarRayClient(fl.client.NumPyClient):
-    def __init__(self, dataset_name, cid: str, fed_dir: str):
+    def __init__(self, dataset_name, cid: str, fed_dir: str, mu, strategy):
         self.cid = cid
         self.fed_dir= Path(fed_dir)
         self.properties: Dict[str, Scalar] = {"tensor_type": "numpy.ndarray"}
         self.temperature = 0.5
         self.dataset_name = dataset_name
+        self.mu = mu
+        self.strategy = strategy
         if dataset_name == 'CIFAR-10':
-            self.mu = 5
             self.net = Cifar10Net()
         else: 
-            self.mu = 1
             self.net = Cifar100Net()
         # determine device
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -132,7 +135,7 @@ class CifarRayClient(fl.client.NumPyClient):
 
         prev_net = self.load_prev_net()
         prev_net.to(self.device)
-        train(self.net, prev_net, global_net, trainloader, epochs=int(config["epochs"]), mu=self.mu, temperature=self.temperature, device=self.device)
+        train(self.net, prev_net, global_net, trainloader, epochs=int(config["epochs"]), mu=self.mu, temperature=self.temperature, device=self.device, strategy=self.strategy)
         torch.save(self.net.state_dict(), self.fed_dir / str(self.cid) / "net.pt")
         # return local model and statistics
         return self.get_parameters(), len(trainloader.dataset), {}
@@ -217,7 +220,7 @@ def main():
         "--strategy",
         type=str,
         default="fedAvg",
-        help="Name of the strategy you are running (default: fedAvg)",
+        help="Name of the strategy you are running (default: fedAvg). Alternatively, use moon.",
     )
     parser.add_argument(
         "--dataset",
@@ -233,6 +236,12 @@ def main():
         help="Concentration parameter of Dirichlet Distribution."
     )
 
+    parser.add_argument(
+        "--mu",
+        type=float,
+        default=5,
+        help="Mu for MOON."
+    )
     args = parser.parse_args()
     pool_size = args.num_clients  # number of dataset partions (= number of total clients)
     num_classes = 10 if args.dataset=='CIFAR-10' else 100
@@ -262,7 +271,7 @@ def main():
     
     # configure the strategy
   
-    strategy = FedAvg(
+    s = FedAvg(
         fraction_fit=args.sample_fraction_fit,
         min_available_clients=pool_size,  # All clients should be available
         on_fit_config_fn=fit_config,
@@ -272,7 +281,7 @@ def main():
 
     def client_fn(cid: str):
         # create a single client instance
-        return CifarRayClient(args.dataset, cid, fed_dir)
+        return CifarRayClient(args.dataset, cid, fed_dir, mu = args.mu, strategy=args.strategy)
 
     # (optional) specify ray config
     ray_config = {"include_dashboard": False}
@@ -282,7 +291,7 @@ def main():
         client_fn=client_fn,
         num_clients=pool_size,
         num_rounds=args.num_rounds,
-        strategy=strategy,
+        strategy=s,
         model = model,
         ray_init_args=ray_config,
         path_to_save_metrics = fed_dir.parent.parent

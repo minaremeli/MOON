@@ -4,7 +4,6 @@ import torch
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-import shutil
 from PIL import Image
 from torchvision.datasets import VisionDataset
 from torch.autograd import Variable
