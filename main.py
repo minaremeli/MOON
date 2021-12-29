@@ -201,20 +201,20 @@ def main():
     parser.add_argument(
         "--num_rounds",
         type=int,
-        default=3,
+        default=1,
         help="Number of rounds of federated learning (default: 1)",
     )
     parser.add_argument(
         "--sample_fraction_fit",
         type=float,
-        default=0.1,
+        default=1.0,
         help="Fraction of available clients used for fit (default: 1.0)",
     )
     parser.add_argument(
         "--num_clients",
         type=int,
         default=100,
-        help="Number of clients to start",
+        help="Number of clients to start (default: 100)",
     )
 
     parser.add_argument(
@@ -227,21 +227,21 @@ def main():
         "--dataset",
         type=str,
         default='CIFAR-10',
-        help="Dataset to train on. Currently support only CIFAR-10 and CIFAR-100."
+        help="Dataset to train on. Currently support only CIFAR-10."
     )
 
     parser.add_argument(
         "--alpha",
         type=float,
         default=0.5,
-        help="Concentration parameter of Dirichlet Distribution."
+        help="Concentration parameter of Dirichlet Distribution (default: 0.5)."
     )
 
     parser.add_argument(
         "--mu",
         type=float,
         default=5,
-        help="Mu for MOON."
+        help="Mu for MOON (default: 5)."
     )
 
     parser.add_argument(
@@ -254,7 +254,7 @@ def main():
         "--seed",
         type=int,
         default=0,
-        help="Initial seed"
+        help="Initial seed (default: 0)" 
     )
 
     # Seeding
