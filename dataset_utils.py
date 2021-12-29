@@ -1,6 +1,7 @@
 from pathlib import Path
 import numpy as np
 import torch
+import shutil
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
@@ -8,7 +9,6 @@ from PIL import Image
 from torchvision.datasets import VisionDataset
 from torch.autograd import Variable
 from typing import Callable, Optional, Tuple, Any
-from flwr.dataset.utils.common import create_lda_partitions
 
 
 def get_dataloader(
@@ -23,36 +23,76 @@ def get_dataloader(
     kwargs = {"num_workers": workers, "pin_memory": True, "drop_last": False}
     return DataLoader(dataset, batch_size=batch_size, **kwargs)
 
-def do_fl_partitioning(path_to_dataset, pool_size, dirichlet_dist, is_train):
+def create_lda_partitions(dataset, dirichlet_dist):
+    img_ids, labels = dataset
+    min_size = 0
+    min_require_size = 10
+    num_classes = len(dirichlet_dist)
+    num_parties = len(dirichlet_dist[0])
+    N = labels.shape[0]
+    while min_size < min_require_size:
+        idx_batch = [[] for _ in range(num_parties)]
+        for k in range(num_classes):
+            idx_k = np.where(labels == k)[0]
+            np.random.shuffle(idx_k)
+            proportions = dirichlet_dist[k]
+            proportions = np.array([p * (len(idx_j) < N / num_parties) for p, idx_j in zip(proportions, idx_batch)])
+            proportions = proportions / proportions.sum()
+            proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
+            idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
+            min_size = min([len(idx_j) for idx_j in idx_batch])
+
+    partitions = []
+    for idx_j in idx_batch:
+        partitions.append((img_ids[idx_j], labels[idx_j]))
+    return partitions
+
+
+def do_fl_partitioning(path_to_dataset, pool_size, dirichlet_dist, to_partition):
     """Torchvision (e.g. CIFAR-10) datasets using LDA."""
 
-    images, labels = torch.load(path_to_dataset)
-    idx = np.array(range(len(images)))
-    dataset = [idx, labels]
-    partitions, _ = create_lda_partitions(
-        dataset, dirichlet_dist, num_partitions=pool_size, accept_imbalanced=True
-    )
+    splits_dir = path_to_dataset / "federated"
 
-    # now save partitioned dataset to disk
-    # first delete dir containing splits (if exists), then create it
-    splits_dir = path_to_dataset.parent / "federated"
-    if not(splits_dir.exists()):
+    if to_partition:
+        train_images, train_labels = torch.load(path_to_dataset / "training.pt")
+        train_idx = np.array(range(len(train_images)))
+        train_dataset = [train_idx, train_labels]
+
+        train_partitions = create_lda_partitions(train_dataset, dirichlet_dist)
+
+        test_images, test_labels = torch.load(path_to_dataset / "test.pt")
+        print(len(test_images), len(test_labels))
+        test_idx = np.array(range(len(test_images)))
+        test_dataset = [test_idx, test_labels]
+
+        test_partitions = create_lda_partitions(test_dataset, dirichlet_dist)
+
+
+        # now save partitioned dataset to disk
+        # first delete dir containing splits (if exists), then create it
+        if splits_dir.exists():
+            shutil.rmtree(splits_dir)
         Path.mkdir(splits_dir, parents=True)
-    
 
-    for p in range(pool_size):
+        
+        for p in range(pool_size):
+             # create dir
+            if not(splits_dir/str(p)).exists():
+                Path.mkdir(splits_dir / str(p))
 
-        labels = partitions[p][1]
-        image_idx = partitions[p][0]
-        imgs = images[image_idx]
+            train_labels = train_partitions[p][1]
+            train_image_idx = train_partitions[p][0]
+            train_imgs = train_images[train_image_idx]
 
-        # create dir
-        if not(splits_dir/str(p)).exists():
-            Path.mkdir(splits_dir / str(p))
+            test_labels = test_partitions[p][1]
+            test_image_idx = test_partitions[p][0]
+            test_imgs = test_images[test_image_idx]
 
-        dataset_type = "train.pt" if is_train else "test.pt"
-        with open(splits_dir / str(p) / dataset_type, "wb") as f:
-            torch.save([imgs, labels], f)
+           
+            with open(splits_dir / str(p) / "train.pt", "wb") as f:
+                torch.save([train_imgs, train_labels], f)
+            with open(splits_dir / str(p) / "test.pt", "wb") as f:
+                torch.save([test_imgs, test_labels], f)
 
     return splits_dir
 
@@ -184,9 +224,9 @@ def getCIFAR10(path_to_data="./data"):
     test_data = data_loc / "test.pt"
     print("Generating unified CIFAR dataset")
     torch.save([train_set.data, np.array(train_set.targets)], training_data)
-    torch.save([test_set.data, np.array(train_set.targets)], test_data)
+    torch.save([test_set.data, np.array(test_set.targets)], test_data)
 
     test_set = datasets.CIFAR10(
         root=path_to_data, train=False, transform=cifar10Transformation()[1]
     )
-    return training_data, test_data, test_set
+    return data_loc, test_set

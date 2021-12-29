@@ -232,7 +232,7 @@ def main():
     parser.add_argument(
         "--alpha",
         type=float,
-        default=1000,
+        default=0.5,
         help="Concentration parameter of Dirichlet Distribution."
     )
 
@@ -242,13 +242,21 @@ def main():
         default=5,
         help="Mu for MOON."
     )
+
+    parser.add_argument(
+        "--to_partition",
+        type=bool,
+        default=True,
+        help="Set to False if you don't want to repartition data. Useful if want to run different strategies on same partition."
+    )
+
     args = parser.parse_args()
     pool_size = args.num_clients  # number of dataset partions (= number of total clients)
     num_classes = 10 if args.dataset=='CIFAR-10' else 100
     model = Cifar10Net() if args.dataset == "CIFAR-10" else Cifar100Net()
 
     # download CIFAR10 dataset
-    train_path, test_path, test_set = getCIFAR10() if args.dataset=='CIFAR-10' else getCIFAR100()
+    data_loc, test_set = getCIFAR10() if args.dataset=='CIFAR-10' else getCIFAR100()
 
     alpha = args.alpha
     
@@ -258,13 +266,11 @@ def main():
     # This will create a new directory called "federated: in the directory where
     # CIFAR-10 lives. Inside it, there will be N=pool_size sub-directories each with
     # its own train/set split.
-    dirichlet_dist = np.random.default_rng().dirichlet(alpha=np.repeat(alpha, num_classes), size=pool_size)
-    fed_dir= do_fl_partitioning(
-        train_path, pool_size=pool_size, is_train=True, dirichlet_dist=dirichlet_dist
+    dirichlet_dist = np.random.default_rng().dirichlet(alpha=np.repeat(alpha, pool_size), size=num_classes)
+    fed_dir = do_fl_partitioning(
+        data_loc, pool_size=pool_size, dirichlet_dist=dirichlet_dist, to_partition=args.to_partition
     )
-    do_fl_partitioning(
-        test_path, pool_size=pool_size, is_train=False, dirichlet_dist=dirichlet_dist
-    )
+    
     prev_net = Cifar10Net() if args.dataset == 'CIFAR-10' else Cifar100Net()
     for i in range(pool_size):
         torch.save(prev_net.state_dict(), fed_dir / str(i) / "net.pt")
@@ -277,6 +283,8 @@ def main():
         on_fit_config_fn=fit_config,
         eval_fn=get_eval_fn(model, test_set),  # centralised testset evaluation of global model
     )
+    
+    
 
 
     def client_fn(cid: str):
