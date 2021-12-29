@@ -12,6 +12,7 @@ from strategy import FedAvg
 from simulation import start_simulation
 from dataset_utils import get_dataloader, do_fl_partitioning, getCIFAR100, getCIFAR10
 import copy
+import random
 
 
 
@@ -249,8 +250,23 @@ def main():
         default=True,
         help="Set to False if you don't want to repartition data. Useful if want to run different strategies on same partition."
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Initial seed"
+    )
 
+    # Seeding
     args = parser.parse_args()
+    seed = args.seed
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+    random.seed(seed)
+
+
     pool_size = args.num_clients  # number of dataset partions (= number of total clients)
     num_classes = 10 if args.dataset=='CIFAR-10' else 100
     model = Cifar10Net() if args.dataset == "CIFAR-10" else Cifar100Net()
