@@ -260,7 +260,7 @@ def main():
     )
 
     parser.add_argument(
-        "--alpha",
+        "--beta",
         type=float,
         default=0.5,
         help="Concentration parameter of Dirichlet Distribution (default: 0.5)."
@@ -303,15 +303,15 @@ def main():
     # download CIFAR10 dataset
     data_loc, test_set = getCIFAR10() if args.dataset=='CIFAR-10' else getCIFAR100()
 
-    alpha = args.alpha
+    beta = args.beta
 
 
-    # partition dataset (use a large `alpha` to make it IID;
+    # partition dataset (use a large `beta` to make it IID;
     # a small value (e.g. 1) will make it non-IID)
     # This will create a new directory called "federated: in the directory where
     # CIFAR-10 lives. Inside it, there will be N=pool_size sub-directories each with
     # its own train/set split.
-    dirichlet_dist = np.random.default_rng().dirichlet(alpha=np.repeat(alpha, pool_size), size=num_classes)
+    dirichlet_dist = np.random.default_rng().dirichlet(alpha=np.repeat(beta, pool_size), size=num_classes)
     fed_dir = do_fl_partitioning(
         data_loc, pool_size=pool_size, dirichlet_dist=dirichlet_dist, to_partition=args.to_partition
     )
