@@ -255,6 +255,7 @@ def main():
         "--strategy",
         type=str,
         default="fedAvg",
+        choices=["fedAvg", "moon"],
         help="Name of the strategy you are running (default: fedAvg). Alternatively, use moon.",
     )
     parser.add_argument(
