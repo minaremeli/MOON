@@ -96,10 +96,10 @@ def save_metrics(hist, path_to_save_metrics):
     accs_distributed = np.array([])
     accs_centralized = np.array([])
     for (_,acc) in hist.metrics_distributed['accuracy']:
-        np.append(accs_distributed, acc)
+        accs_distributed = np.append(accs_distributed, acc)
     for (_,acc) in hist.metrics_centralized['accuracy']:
-        np.append(accs_centralized,acc)
-
+        accs_centralized = np.append(accs_centralized,acc)
+        
     np.save(path_to_save_metrics / "accs_distributed.npy", accs_distributed)
     np.save(path_to_save_metrics / "accs_centralized.npy", accs_centralized)
 
