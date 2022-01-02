@@ -295,6 +295,7 @@ def main():
   
     s = FedAvg(
         fraction_fit=args.sample_fraction_fit,
+        fraction_eval=1.0, # evaluate on all the clients in each round
         min_available_clients=pool_size,  # All clients should be available
         on_fit_config_fn=fit_config,
         eval_fn=get_eval_fn(model, test_set),  # centralised testset evaluation of global model
