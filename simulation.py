@@ -2,25 +2,25 @@ from logging import INFO
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import ray
-
 from flwr.client.client import Client
 from flwr.common.logger import log
+from flwr.server.client_manager import SimpleClientManager
 from flwr.server.strategy import FedAvg, Strategy
 from flwr.simulation.ray_transport.ray_client_proxy import RayClientProxy
-from flwr.server.client_manager import SimpleClientManager
+
 from server import Server, save_metrics, save_model
 
 
 def start_simulation(  # pylint: disable=too-many-arguments
-    *,
-    client_fn: Callable[[str], Client],
-    num_clients: Optional[int] = None,
-    client_resources: Optional[Dict[str, int]] = None,
-    num_rounds: int = 1,
-    strategy: Optional[Strategy] = None,
-    ray_init_args: Optional[Dict[str, Any]] = None,
-    path_to_save_metrics,
-    model
+        *,
+        client_fn: Callable[[str], Client],
+        num_clients: Optional[int] = None,
+        client_resources: Optional[Dict[str, int]] = None,
+        num_rounds: int = 1,
+        strategy: Optional[Strategy] = None,
+        ray_init_args: Optional[Dict[str, Any]] = None,
+        path_to_save_metrics,
+        model
 ) -> None:
     """Start a Ray-based Flower simulation server.
     Parameters
@@ -64,10 +64,7 @@ def start_simulation(  # pylint: disable=too-many-arguments
         An empty dictionary can be used (ray_init_args={}) to prevent any
         arguments from being passed to ray.init.
     """
-    cids : List[str] = [str(x) for x in range(num_clients)]
-
-    
-            
+    cids: List[str] = [str(x) for x in range(num_clients)]
 
     # Default arguments for Ray initialization
     if not ray_init_args:
@@ -111,21 +108,23 @@ def start_simulation(  # pylint: disable=too-many-arguments
     _fl(
         server=initialized_server,
         config=initialized_config,
-        model = model
+        model=model
     )
 
+
 def _init_defaults(
-    server: Optional[Server],
-    config: Optional[Dict[str, int]],
-    strategy: Optional[Strategy],
-    model
+        server: Optional[Server],
+        config: Optional[Dict[str, int]],
+        strategy: Optional[Strategy],
+        model
 ) -> Tuple[Server, Dict[str, int]]:
     # Create server instance if none was given
     if server is None:
         client_manager = SimpleClientManager()
         if strategy is None:
             strategy = FedAvg()
-        server = Server(client_manager=client_manager, strategy=strategy, path_to_save_metrics = config["path_to_save_metrics"], model=model)
+        server = Server(client_manager=client_manager, strategy=strategy,
+                        path_to_save_metrics=config["path_to_save_metrics"], model=model)
 
     # Set default config values
     if config is None:
@@ -136,16 +135,14 @@ def _init_defaults(
     return server, config
 
 
-
 def _fl(
-    server: Server, config: Dict[str, int], model
+        server: Server, config: Dict[str, int], model
 ) -> None:
     # Fit model
     hist = server.fit(num_rounds=config["num_rounds"])
     save_metrics(hist, config["path_to_save_metrics"])
     save_model(server.parameters, model, config["path_to_save_metrics"])
 
-    
     log(INFO, "app_fit: losses_distributed %s", str(hist.losses_distributed))
     log(INFO, "app_fit: metrics_distributed %s", str(hist.metrics_distributed))
     log(INFO, "app_fit: losses_centralized %s", str(hist.losses_centralized))

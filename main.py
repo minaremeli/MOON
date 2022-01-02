@@ -1,18 +1,20 @@
-import flwr as fl
-from flwr.common.typing import Scalar
-import ray
 import argparse
-import torch
-import numpy as np
+import copy
+import random
 from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Callable, Optional, Tuple
-from models import Cifar10Net, Cifar100Net
-from strategy import FedAvg
-from simulation import start_simulation
+
+import flwr as fl
+import numpy as np
+import ray
+import torch
+from flwr.common.typing import Scalar
+
 from dataset_utils import get_dataloader, do_fl_partitioning, getCIFAR100, getCIFAR10
-import copy
-import random
+from models import Cifar10Net, Cifar100Net
+from simulation import start_simulation
+from strategy import FedAvg
 
 
 def supervised_loss(net, x, target, device):
@@ -72,7 +74,7 @@ def test(net, testloader, device: str):
     loss = 0
     net.eval()
     with torch.no_grad():
-        for x,target in testloader:
+        for x, target in testloader:
             x, target = x.to(device), target.to(device)
             _, out = net(x)
             _, predicted = torch.max(out.data, 1)
@@ -85,17 +87,19 @@ def test(net, testloader, device: str):
     avg_loss = loss / total
     return accuracy, avg_loss
 
+
 def configure_net_for_eval(net):
     net.eval()
     for param in net.parameters():
         param.requires_grad = False
+
 
 # Flower client that will be spawned by Ray
 # Adapted from Pytorch quickstart example
 class CifarRayClient(fl.client.NumPyClient):
     def __init__(self, dataset_name, cid: str, fed_dir: str, mu, strategy):
         self.cid = cid
-        self.fed_dir= Path(fed_dir)
+        self.fed_dir = Path(fed_dir)
         self.properties: Dict[str, Scalar] = {"tensor_type": "numpy.ndarray"}
         self.temperature = 0.5
         self.dataset_name = dataset_name
@@ -121,6 +125,7 @@ class CifarRayClient(fl.client.NumPyClient):
             {k: torch.from_numpy(np.copy(v)) for k, v in params_dict}
         )
         self.net.load_state_dict(state_dict, strict=True)
+
     def load_prev_net(self):
         path_to_prev_net = self.fed_dir / self.cid / "net.pt"
         prev_net = copy.deepcopy(self.net)
@@ -152,7 +157,8 @@ class CifarRayClient(fl.client.NumPyClient):
 
         prev_net = self.load_prev_net()
         prev_net.to(self.device)
-        train(self.net, prev_net, global_net, trainloader, epochs=int(config["epochs"]), mu=self.mu, temperature=self.temperature, device=self.device, strategy=self.strategy)
+        train(self.net, prev_net, global_net, trainloader, epochs=int(config["epochs"]), mu=self.mu,
+              temperature=self.temperature, device=self.device, strategy=self.strategy)
         torch.save(self.net.state_dict(), self.fed_dir / str(self.cid) / "net.pt")
         # return local model and statistics
         return self.get_parameters(), len(trainloader.dataset), {}
@@ -180,8 +186,6 @@ def get_eval_fn(model, testset) -> Callable[[fl.common.Weights], Optional[Tuple[
     """Return an evaluation function for centralized evaluation."""
 
     def evaluate(weights: fl.common.Weights) -> Optional[Tuple[float, Dict[str, Scalar]]]:
-
-
         # determine device
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -206,6 +210,7 @@ def set_weights(model: torch.nn.ModuleList, weights: fl.common.Weights) -> None:
         }
     )
     model.load_state_dict(state_dict, strict=True)
+
 
 def fit_config(rnd: int) -> Dict[str, str]:
     """Return a configuration with static batch size and (local) epochs."""
@@ -295,16 +300,14 @@ def main():
         torch.cuda.manual_seed(seed)
     random.seed(seed)
 
-
     pool_size = args.num_clients  # number of dataset partions (= number of total clients)
-    num_classes = 10 if args.dataset=='CIFAR-10' else 100
+    num_classes = 10 if args.dataset == 'CIFAR-10' else 100
     model = Cifar10Net() if args.dataset == "CIFAR-10" else Cifar100Net()
 
     # download CIFAR10 dataset
-    data_loc, test_set = getCIFAR10() if args.dataset=='CIFAR-10' else getCIFAR100()
+    data_loc, test_set = getCIFAR10() if args.dataset == 'CIFAR-10' else getCIFAR100()
 
     beta = args.beta
-
 
     # partition dataset (use a large `beta` to make it IID;
     # a small value (e.g. 1) will make it non-IID)
@@ -324,18 +327,15 @@ def main():
 
     s = FedAvg(
         fraction_fit=args.sample_fraction_fit,
-        fraction_eval=1.0, # evaluate on all the clients in each round
+        fraction_eval=1.0,  # evaluate on all the clients in each round
         min_available_clients=pool_size,  # All clients should be available
         on_fit_config_fn=fit_config,
         eval_fn=get_eval_fn(model, test_set),  # centralised testset evaluation of global model
     )
 
-
-
-
     def client_fn(cid: str):
         # create a single client instance
-        return CifarRayClient(args.dataset, cid, fed_dir, mu = args.mu, strategy=args.strategy)
+        return CifarRayClient(args.dataset, cid, fed_dir, mu=args.mu, strategy=args.strategy)
 
     # (optional) specify ray config
     ray_config = {"include_dashboard": False}
@@ -346,10 +346,11 @@ def main():
         num_clients=pool_size,
         num_rounds=args.num_rounds,
         strategy=s,
-        model = model,
+        model=model,
         ray_init_args=ray_config,
-        path_to_save_metrics = fed_dir.parent.parent
+        path_to_save_metrics=fed_dir.parent.parent
     )
+
 
 if __name__ == "__main__":
     main()
