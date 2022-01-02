@@ -215,6 +215,16 @@ def fit_config(rnd: int) -> Dict[str, str]:
         "batch_size": str(64),
     }
     return config
+
+
+def str_to_bool(value):
+    if value.lower() in {'false', 'f', '0', 'no', 'n'}:
+        return False
+    elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
+        return True
+    raise ValueError(f'{value} is not a valid boolean value')
+
+
 def main():
     parser = argparse.ArgumentParser(description="Flower")
     parser.add_argument(
@@ -265,7 +275,7 @@ def main():
 
     parser.add_argument(
         "--to_partition",
-        type=bool,
+        type=str_to_bool,
         default=True,
         help="Set to False if you don't want to repartition data. Useful if want to run different strategies on same partition."
     )
