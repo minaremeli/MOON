@@ -95,13 +95,21 @@ ReconnectResultsAndFailures = Tuple[
 def save_metrics(hist, path_to_save_metrics):
     accs_distributed = np.array([])
     accs_centralized = np.array([])
+    loss_distributed = np.array([])
+    loss_centralized = np.array([])
     for (_,acc) in hist.metrics_distributed['accuracy']:
         accs_distributed = np.append(accs_distributed, acc)
     for (_,acc) in hist.metrics_centralized['accuracy']:
         accs_centralized = np.append(accs_centralized,acc)
+    for (_, loss) in hist.losses_distributed:
+        loss_distributed = np.append(loss_distributed, loss)
+    for (_, loss) in hist.losses_centralized:
+        loss_centralized = np.append(loss_centralized, loss)
         
     np.save(path_to_save_metrics / "accs_distributed.npy", accs_distributed)
     np.save(path_to_save_metrics / "accs_centralized.npy", accs_centralized)
+    np.save(path_to_save_metrics / "loss_distributed.npy", loss_distributed)
+    np.save(path_to_save_metrics / "loss_centralized.npy", loss_centralized)
 
 def set_weights(model: torch.nn.ModuleList, weights: Weights) -> None:
     """Set model weights from a list of NumPy ndarrays."""

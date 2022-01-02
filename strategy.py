@@ -18,7 +18,7 @@ from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy
 
 from flwr.server.strategy  import Strategy
-from flwr.server.strategy.aggregate import aggregate
+from flwr.server.strategy.aggregate import aggregate, weighted_loss_avg
 
 DEPRECATION_WARNING = """
 DEPRECATION WARNING: deprecated `eval_fn` return format
@@ -251,4 +251,15 @@ class FedAvg(Strategy):
                 for _, evaluate_res in results
             ]
         )
-        return 1.0, {"accuracy":acc_aggregated}
+
+        loss_aggregated = weighted_loss_avg(
+            [
+                (
+                    evaluate_res.num_examples,
+                    evaluate_res.loss,
+                    evaluate_res.accuracy,
+                )
+                for _, evaluate_res in results
+            ]
+        )
+        return loss_aggregated, {"accuracy":acc_aggregated}

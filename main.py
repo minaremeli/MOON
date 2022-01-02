@@ -15,30 +15,41 @@ import copy
 import random
 
 
+def supervised_loss(net, x, target, device):
+    criterion = torch.nn.CrossEntropyLoss()
+    _, out = net(x)
+    return criterion(out, target).to(device), out
 
-def calc_loss(local_net, previous_net, global_net, x, target, mu, temperature, device, strategy):
-    
+
+def contrastive_loss(local_net, previous_net, global_net, x, target, mu, temperature, device):
     criterion = torch.nn.CrossEntropyLoss()
     pro1, out = local_net(x)
     loss1 = criterion(out, target)
-    loss2 = 0
-    if strategy == 'moon':
-        pro2, _ = global_net(x)
-        pro3, _ = previous_net(x)
 
-        cos=torch.nn.CosineSimilarity(dim=-1)
-        posi = cos(pro1, pro2)
-        nega = cos(pro1, pro3)
+    pro2, _ = global_net(x)
+    pro3, _ = previous_net(x)
 
-        logits = posi.reshape(-1,1)
-        logits = torch.cat((logits, nega.reshape(-1,1)), dim=1).to(device)
-        logits /= temperature
+    cos = torch.nn.CosineSimilarity(dim=-1)
+    posi = cos(pro1, pro2)
+    nega = cos(pro1, pro3)
 
-        t = torch.zeros(x.size(0)).to(device).long()
-        loss2 = mu * criterion(logits, t)
+    logits = posi.reshape(-1, 1)
+    logits = torch.cat((logits, nega.reshape(-1, 1)), dim=1).to(device)
+    logits /= temperature
+
+    t = torch.zeros(x.size(0)).to(device).long()
+    loss2 = mu * criterion(logits, t)
 
     loss = loss1 + loss2
     return loss, out
+
+
+def calc_loss(local_net, previous_net, global_net, x, target, mu, temperature, device, strategy):
+    if strategy == 'moon':
+        return contrastive_loss(local_net, previous_net, global_net, x, target, mu, temperature, device)
+    else:
+        return supervised_loss(local_net, x, target, device)
+
 
 def train(local_net, previous_net, global_net, trainloader, epochs, mu, temperature, device: str, strategy):
     local_net.train()
@@ -49,7 +60,7 @@ def train(local_net, previous_net, global_net, trainloader, epochs, mu, temperat
 
             x, target = x.to(device), target.to(device)
             loss, _ = calc_loss(local_net, previous_net, global_net, x, target, mu, temperature, device, strategy)
-            
+
             loss.backward()
             optimizer.step()
 
@@ -58,6 +69,7 @@ def train(local_net, previous_net, global_net, trainloader, epochs, mu, temperat
 def test(net, testloader, device: str):
     """Validate the network on the entire test set."""
     correct, total = 0, 0
+    loss = 0
     net.eval()
     with torch.no_grad():
         for x,target in testloader:
@@ -66,8 +78,12 @@ def test(net, testloader, device: str):
             _, predicted = torch.max(out.data, 1)
             total += target.size(0)
             correct += (predicted == target).sum().item()
+
+            curr_loss, _ = supervised_loss(net=net, x=x, target=target, device=device)
+            loss += curr_loss.item()
     accuracy = correct / total
-    return accuracy
+    avg_loss = loss / total
+    return accuracy, avg_loss
 
 def configure_net_for_eval(net):
     net.eval()
@@ -87,7 +103,7 @@ class CifarRayClient(fl.client.NumPyClient):
         self.strategy = strategy
         if dataset_name == 'CIFAR-10':
             self.net = Cifar10Net()
-        else: 
+        else:
             self.net = Cifar100Net()
         # determine device
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -113,10 +129,10 @@ class CifarRayClient(fl.client.NumPyClient):
         return prev_net
 
     def fit(self, parameters, config):
-        
+
         # print(f"fit() on client cid={self.cid}")
         self.set_parameters(parameters)
-    
+
         # load data for this client and get trainloader
         num_workers = len(ray.worker.get_resource_ids()["CPU"])
         trainloader = get_dataloader(
@@ -129,7 +145,7 @@ class CifarRayClient(fl.client.NumPyClient):
         )
         # send model to device
         self.net.to(self.device)
-        
+
         global_net = copy.deepcopy(self.net)
         configure_net_for_eval(global_net)
         global_net.to(self.device)
@@ -155,13 +171,15 @@ class CifarRayClient(fl.client.NumPyClient):
         self.net.to(self.device)
 
         # evaluate
-        accuracy = test(self.net, testloader, device=self.device)
+        accuracy, avg_loss = test(self.net, testloader, device=self.device)
         # return statistics
-        return 1.0, len(testloader.dataset), {"accuracy": float(accuracy)}
-def get_eval_fn(model, testset) -> Callable[[fl.common.Weights], Optional[Tuple[float, float]]]:
+        return avg_loss, len(testloader.dataset), {"accuracy": float(accuracy)}
+
+
+def get_eval_fn(model, testset) -> Callable[[fl.common.Weights], Optional[Tuple[float, Dict[str, Scalar]]]]:
     """Return an evaluation function for centralized evaluation."""
 
-    def evaluate(weights: fl.common.Weights) -> Optional[Tuple[float, float]]:
+    def evaluate(weights: fl.common.Weights) -> Optional[Tuple[float, Dict[str, Scalar]]]:
 
 
         # determine device
@@ -171,12 +189,13 @@ def get_eval_fn(model, testset) -> Callable[[fl.common.Weights], Optional[Tuple[
         model.to(device)
 
         testloader = torch.utils.data.DataLoader(testset, batch_size=50)
-        accuracy = test(model, testloader, device=device)
+        accuracy, avg_loss = test(model, testloader, device=device)
 
         # return statistics
-        return 0, {"accuracy": accuracy}
+        return avg_loss, {"accuracy": accuracy}
 
     return evaluate
+
 
 def set_weights(model: torch.nn.ModuleList, weights: fl.common.Weights) -> None:
     """Set model weights from a list of NumPy ndarrays."""
@@ -254,7 +273,7 @@ def main():
         "--seed",
         type=int,
         default=0,
-        help="Initial seed (default: 0)" 
+        help="Initial seed (default: 0)"
     )
 
     # Seeding
@@ -275,7 +294,7 @@ def main():
     data_loc, test_set = getCIFAR10() if args.dataset=='CIFAR-10' else getCIFAR100()
 
     alpha = args.alpha
-    
+
 
     # partition dataset (use a large `alpha` to make it IID;
     # a small value (e.g. 1) will make it non-IID)
@@ -286,13 +305,13 @@ def main():
     fed_dir = do_fl_partitioning(
         data_loc, pool_size=pool_size, dirichlet_dist=dirichlet_dist, to_partition=args.to_partition
     )
-    
+
     prev_net = Cifar10Net() if args.dataset == 'CIFAR-10' else Cifar100Net()
     for i in range(pool_size):
         torch.save(prev_net.state_dict(), fed_dir / str(i) / "net.pt")
-    
+
     # configure the strategy
-  
+
     s = FedAvg(
         fraction_fit=args.sample_fraction_fit,
         fraction_eval=1.0, # evaluate on all the clients in each round
@@ -300,8 +319,8 @@ def main():
         on_fit_config_fn=fit_config,
         eval_fn=get_eval_fn(model, test_set),  # centralised testset evaluation of global model
     )
-    
-    
+
+
 
 
     def client_fn(cid: str):
@@ -324,4 +343,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
