@@ -51,10 +51,10 @@ def create_lda_partitions(dataset, dirichlet_dist):
     return partitions
 
 
-def do_fl_partitioning(path_to_dataset, pool_size, dirichlet_dist, to_partition):
+def do_fl_partitioning(path_to_dataset, experiment_id, pool_size, dirichlet_dist, to_partition):
     """Torchvision (e.g. CIFAR-10) datasets using LDA."""
 
-    splits_dir = path_to_dataset / "federated"
+    splits_dir = path_to_dataset / experiment_id / "federated"
 
     if to_partition:
         train_images, train_labels = torch.load(path_to_dataset / "training.pt")

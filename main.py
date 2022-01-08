@@ -242,6 +242,12 @@ def str_to_bool(value):
     raise ValueError(f'{value} is not a valid boolean value')
 
 
+def create_id(args):
+    return str(args.num_rounds) + "_rnd_" + str(args.sample_fraction_fit) + "_frac_" + str(args.num_clients) + "_cli_" \
+            + args.strategy + "_" + str(args.num_rounds) + "_b_" + str(args.lr) + "_lr_" \
+            + str(args.mu) + "_mu_" + str(args.seed) + "_seed"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Flower")
     parser.add_argument(
@@ -321,6 +327,10 @@ def main():
     random.seed(seed)
     CifarRayClient.seed = seed
 
+    # create experiment id
+    experiment_id = create_id(args)
+    print("Running %s" % experiment_id)
+
     pool_size = args.num_clients  # number of dataset partions (= number of total clients)
     num_classes = 10 if args.dataset == 'CIFAR-10' else 100
     model = Cifar10Net() if args.dataset == "CIFAR-10" else Cifar100Net()
@@ -337,7 +347,7 @@ def main():
     # its own train/set split.
     dirichlet_dist = np.random.default_rng().dirichlet(alpha=np.repeat(beta, pool_size), size=num_classes)
     fed_dir = do_fl_partitioning(
-        data_loc, pool_size=pool_size, dirichlet_dist=dirichlet_dist, to_partition=args.to_partition
+        data_loc, experiment_id, pool_size=pool_size, dirichlet_dist=dirichlet_dist, to_partition=args.to_partition
     )
 
     prev_net = Cifar10Net() if args.dataset == 'CIFAR-10' else Cifar100Net()
@@ -369,7 +379,7 @@ def main():
         strategy=s,
         model=model,
         ray_init_args=ray_config,
-        path_to_save_metrics=fed_dir.parent.parent,
+        path_to_save_metrics=fed_dir.parent,
     )
 
 
