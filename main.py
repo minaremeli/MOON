@@ -53,9 +53,9 @@ def calc_loss(local_net, previous_net, global_net, x, target, mu, temperature, d
         return supervised_loss(local_net, x, target, device)
 
 
-def train(local_net, previous_net, global_net, trainloader, epochs, mu, temperature, device: str, strategy):
+def train(local_net, previous_net, global_net, trainloader, epochs, lr, mu, temperature, device: str, strategy):
     local_net.train()
-    optimizer = torch.optim.SGD(local_net.parameters(), lr=0.01, momentum=0.9, weight_decay=0.00001)
+    optimizer = torch.optim.SGD(local_net.parameters(), lr=lr, momentum=0.9, weight_decay=0.00001)
     for _ in range(epochs):
         for (x, target) in trainloader:
             optimizer.zero_grad()
@@ -97,12 +97,13 @@ def configure_net_for_eval(net):
 # Flower client that will be spawned by Ray
 # Adapted from Pytorch quickstart example
 class CifarRayClient(fl.client.NumPyClient):
-    def __init__(self, dataset_name, cid: str, fed_dir: str, mu, strategy):
+    def __init__(self, dataset_name, cid: str, fed_dir: str, lr, mu, strategy):
         self.cid = cid
         self.fed_dir = Path(fed_dir)
         self.properties: Dict[str, Scalar] = {"tensor_type": "numpy.ndarray"}
         self.temperature = 0.5
         self.dataset_name = dataset_name
+        self.lr = lr
         self.mu = mu
         self.strategy = strategy
         if dataset_name == 'CIFAR-10':
@@ -157,7 +158,7 @@ class CifarRayClient(fl.client.NumPyClient):
 
         prev_net = self.load_prev_net()
         prev_net.to(self.device)
-        train(self.net, prev_net, global_net, trainloader, epochs=int(config["epochs"]), mu=self.mu,
+        train(self.net, prev_net, global_net, trainloader, epochs=int(config["epochs"]), lr=self.lr, mu=self.mu,
               temperature=self.temperature, device=self.device, strategy=self.strategy)
         torch.save(self.net.state_dict(), self.fed_dir / str(self.cid) / "net.pt")
         # return local model and statistics
@@ -273,6 +274,13 @@ def main():
     )
 
     parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.01,
+        help="Learning rate of SGD (default: 0.01)."
+    )
+
+    parser.add_argument(
         "--mu",
         type=float,
         default=5,
@@ -336,7 +344,7 @@ def main():
 
     def client_fn(cid: str):
         # create a single client instance
-        return CifarRayClient(args.dataset, cid, fed_dir, mu=args.mu, strategy=args.strategy)
+        return CifarRayClient(args.dataset, cid, fed_dir, lr=args.lr, mu=args.mu, strategy=args.strategy)
 
     # (optional) specify ray config
     ray_config = {"include_dashboard": False}
