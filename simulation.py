@@ -20,7 +20,7 @@ def start_simulation(  # pylint: disable=too-many-arguments
         strategy: Optional[Strategy] = None,
         ray_init_args: Optional[Dict[str, Any]] = None,
         path_to_save_metrics,
-        model
+        model,
 ) -> None:
     """Start a Ray-based Flower simulation server.
     Parameters

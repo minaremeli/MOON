@@ -97,7 +97,11 @@ def configure_net_for_eval(net):
 # Flower client that will be spawned by Ray
 # Adapted from Pytorch quickstart example
 class CifarRayClient(fl.client.NumPyClient):
+    # static seed variable
+    seed = 0
+
     def __init__(self, dataset_name, cid: str, fed_dir: str, lr, mu, strategy):
+        self.__set_seed()
         self.cid = cid
         self.fed_dir = Path(fed_dir)
         self.properties: Dict[str, Scalar] = {"tensor_type": "numpy.ndarray"}
@@ -112,6 +116,13 @@ class CifarRayClient(fl.client.NumPyClient):
             self.net = Cifar100Net()
         # determine device
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    def __set_seed(self):
+        np.random.seed(self.seed)
+        torch.manual_seed(self.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(self.seed)
+        random.seed(self.seed)
 
     def get_parameters(self):
         return [val.cpu().numpy() for _, val in self.net.state_dict().items()]
@@ -308,6 +319,7 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
     random.seed(seed)
+    CifarRayClient.seed = seed
 
     pool_size = args.num_clients  # number of dataset partions (= number of total clients)
     num_classes = 10 if args.dataset == 'CIFAR-10' else 100
@@ -357,7 +369,7 @@ def main():
         strategy=s,
         model=model,
         ray_init_args=ray_config,
-        path_to_save_metrics=fed_dir.parent.parent
+        path_to_save_metrics=fed_dir.parent.parent,
     )
 
 
