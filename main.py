@@ -305,12 +305,6 @@ def main():
     )
 
     parser.add_argument(
-        "--to_partition",
-        type=str_to_bool,
-        default=True,
-        help="Set to False if you don't want to repartition data. Useful if want to run different strategies on same partition."
-    )
-    parser.add_argument(
         "--seed",
         type=int,
         default=0,
@@ -345,9 +339,9 @@ def main():
     # This will create a new directory called "federated: in the directory where
     # CIFAR-10 lives. Inside it, there will be N=pool_size sub-directories each with
     # its own train/set split.
-    dirichlet_dist = np.random.default_rng().dirichlet(alpha=np.repeat(beta, pool_size), size=num_classes)
+    dirichlet_dist = np.random.dirichlet(alpha=np.repeat(beta, pool_size), size=num_classes)
     fed_dir = do_fl_partitioning(
-        data_loc, experiment_id, pool_size=pool_size, dirichlet_dist=dirichlet_dist, to_partition=args.to_partition
+        data_loc, experiment_id, pool_size=pool_size, dirichlet_dist=dirichlet_dist
     )
 
     prev_net = Cifar10Net() if args.dataset == 'CIFAR-10' else Cifar100Net()

@@ -51,48 +51,47 @@ def create_lda_partitions(dataset, dirichlet_dist):
     return partitions
 
 
-def do_fl_partitioning(path_to_dataset, experiment_id, pool_size, dirichlet_dist, to_partition):
+def do_fl_partitioning(path_to_dataset, experiment_id, pool_size, dirichlet_dist):
     """Torchvision (e.g. CIFAR-10) datasets using LDA."""
 
     splits_dir = path_to_dataset / experiment_id / "federated"
 
-    if to_partition:
-        train_images, train_labels = torch.load(path_to_dataset / "training.pt")
-        train_idx = np.array(range(len(train_images)))
-        train_dataset = [train_idx, train_labels]
+    train_images, train_labels = torch.load(path_to_dataset / "training.pt")
+    train_idx = np.array(range(len(train_images)))
+    train_dataset = [train_idx, train_labels]
 
-        train_partitions = create_lda_partitions(train_dataset, dirichlet_dist)
+    train_partitions = create_lda_partitions(train_dataset, dirichlet_dist)
 
-        test_images, test_labels = torch.load(path_to_dataset / "test.pt")
-        print(len(test_images), len(test_labels))
-        test_idx = np.array(range(len(test_images)))
-        test_dataset = [test_idx, test_labels]
+    test_images, test_labels = torch.load(path_to_dataset / "test.pt")
+    print(len(test_images), len(test_labels))
+    test_idx = np.array(range(len(test_images)))
+    test_dataset = [test_idx, test_labels]
 
-        test_partitions = create_lda_partitions(test_dataset, dirichlet_dist)
+    test_partitions = create_lda_partitions(test_dataset, dirichlet_dist)
 
-        # now save partitioned dataset to disk
-        # first delete dir containing splits (if exists), then create it
-        if splits_dir.exists():
-            shutil.rmtree(splits_dir)
-        Path.mkdir(splits_dir, parents=True)
+    # now save partitioned dataset to disk
+    # first delete dir containing splits (if exists), then create it
+    if splits_dir.exists():
+        shutil.rmtree(splits_dir)
+    Path.mkdir(splits_dir, parents=True)
 
-        for p in range(pool_size):
-            # create dir
-            if not (splits_dir / str(p)).exists():
-                Path.mkdir(splits_dir / str(p))
+    for p in range(pool_size):
+        # create dir
+        if not (splits_dir / str(p)).exists():
+            Path.mkdir(splits_dir / str(p))
 
-            train_labels = train_partitions[p][1]
-            train_image_idx = train_partitions[p][0]
-            train_imgs = train_images[train_image_idx]
+        train_labels = train_partitions[p][1]
+        train_image_idx = train_partitions[p][0]
+        train_imgs = train_images[train_image_idx]
 
-            test_labels = test_partitions[p][1]
-            test_image_idx = test_partitions[p][0]
-            test_imgs = test_images[test_image_idx]
+        test_labels = test_partitions[p][1]
+        test_image_idx = test_partitions[p][0]
+        test_imgs = test_images[test_image_idx]
 
-            with open(splits_dir / str(p) / "train.pt", "wb") as f:
-                torch.save([train_imgs, train_labels], f)
-            with open(splits_dir / str(p) / "test.pt", "wb") as f:
-                torch.save([test_imgs, test_labels], f)
+        with open(splits_dir / str(p) / "train.pt", "wb") as f:
+            torch.save([train_imgs, train_labels], f)
+        with open(splits_dir / str(p) / "test.pt", "wb") as f:
+            torch.save([test_imgs, test_labels], f)
 
     return splits_dir
 
