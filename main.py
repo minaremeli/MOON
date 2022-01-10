@@ -244,7 +244,7 @@ def str_to_bool(value):
 
 def create_id(args):
     return str(args.num_rounds) + "_rnd_" + str(args.sample_fraction_fit) + "_frac_" + str(args.num_clients) + "_cli_" \
-            + args.strategy + "_" + str(args.num_rounds) + "_b_" + str(args.lr) + "_lr_" \
+            + args.strategy + "_" + str(args.beta) + "_b_" + str(args.lr) + "_lr_" \
             + str(args.mu) + "_mu_" + str(args.seed) + "_seed"
 
 
