@@ -1,27 +1,30 @@
+import shutil
 from pathlib import Path
+from typing import Callable, Optional, Tuple, Any
+
 import numpy as np
 import torch
-import shutil
 import torch.nn.functional as F
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
 from PIL import Image
-from torchvision.datasets import VisionDataset
 from torch.autograd import Variable
-from typing import Callable, Optional, Tuple, Any
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from torchvision.datasets import VisionDataset
 
 
 def get_dataloader(
-    dataset_name, path_to_data: str, cid: str, is_train: bool, batch_size: int, workers: int
+        dataset_name, path_to_data: str, cid: str, is_train: bool, batch_size: int, workers: int
 ):
     """Generates trainset/valset object and returns appropiate dataloader."""
-    transform_train, transform_test = cifar10Transformation() if dataset_name=='CIFAR-10' else cifar100Transformation()
+    transform_train, transform_test = cifar10Transformation() if dataset_name == 'CIFAR-10' else cifar100Transformation()
     partition = "train" if is_train else "test"
-    dataset = TorchVision_FL(Path(path_to_data)/ cid / (partition + ".pt"), transform=transform_train if is_train else transform_test)
-    
+    dataset = TorchVision_FL(Path(path_to_data) / cid / (partition + ".pt"),
+                             transform=transform_train if is_train else transform_test)
+
     # we use as number of workers all the cpu cores assigned to this actor
     kwargs = {"num_workers": workers, "pin_memory": True, "drop_last": False}
     return DataLoader(dataset, batch_size=batch_size, **kwargs)
+
 
 def create_lda_partitions(dataset, dirichlet_dist):
     img_ids, labels = dataset
@@ -48,58 +51,54 @@ def create_lda_partitions(dataset, dirichlet_dist):
     return partitions
 
 
-def do_fl_partitioning(path_to_dataset, pool_size, dirichlet_dist, to_partition):
+def do_fl_partitioning(path_to_dataset, experiment_id, pool_size, dirichlet_dist):
     """Torchvision (e.g. CIFAR-10) datasets using LDA."""
 
-    splits_dir = path_to_dataset / "federated"
+    splits_dir = path_to_dataset / experiment_id / "federated"
 
-    if to_partition:
-        train_images, train_labels = torch.load(path_to_dataset / "training.pt")
-        train_idx = np.array(range(len(train_images)))
-        train_dataset = [train_idx, train_labels]
+    train_images, train_labels = torch.load(path_to_dataset / "training.pt")
+    train_idx = np.array(range(len(train_images)))
+    train_dataset = [train_idx, train_labels]
 
-        train_partitions = create_lda_partitions(train_dataset, dirichlet_dist)
+    train_partitions = create_lda_partitions(train_dataset, dirichlet_dist)
 
-        test_images, test_labels = torch.load(path_to_dataset / "test.pt")
-        print(len(test_images), len(test_labels))
-        test_idx = np.array(range(len(test_images)))
-        test_dataset = [test_idx, test_labels]
+    test_images, test_labels = torch.load(path_to_dataset / "test.pt")
+    print(len(test_images), len(test_labels))
+    test_idx = np.array(range(len(test_images)))
+    test_dataset = [test_idx, test_labels]
 
-        test_partitions = create_lda_partitions(test_dataset, dirichlet_dist)
+    test_partitions = create_lda_partitions(test_dataset, dirichlet_dist)
 
+    # now save partitioned dataset to disk
+    # first delete dir containing splits (if exists), then create it
+    if splits_dir.exists():
+        shutil.rmtree(splits_dir)
+    Path.mkdir(splits_dir, parents=True)
 
-        # now save partitioned dataset to disk
-        # first delete dir containing splits (if exists), then create it
-        if splits_dir.exists():
-            shutil.rmtree(splits_dir)
-        Path.mkdir(splits_dir, parents=True)
+    for p in range(pool_size):
+        # create dir
+        if not (splits_dir / str(p)).exists():
+            Path.mkdir(splits_dir / str(p))
 
-        
-        for p in range(pool_size):
-             # create dir
-            if not(splits_dir/str(p)).exists():
-                Path.mkdir(splits_dir / str(p))
+        train_labels = train_partitions[p][1]
+        train_image_idx = train_partitions[p][0]
+        train_imgs = train_images[train_image_idx]
 
-            train_labels = train_partitions[p][1]
-            train_image_idx = train_partitions[p][0]
-            train_imgs = train_images[train_image_idx]
+        test_labels = test_partitions[p][1]
+        test_image_idx = test_partitions[p][0]
+        test_imgs = test_images[test_image_idx]
 
-            test_labels = test_partitions[p][1]
-            test_image_idx = test_partitions[p][0]
-            test_imgs = test_images[test_image_idx]
-
-           
-            with open(splits_dir / str(p) / "train.pt", "wb") as f:
-                torch.save([train_imgs, train_labels], f)
-            with open(splits_dir / str(p) / "test.pt", "wb") as f:
-                torch.save([test_imgs, test_labels], f)
+        with open(splits_dir / str(p) / "train.pt", "wb") as f:
+            torch.save([train_imgs, train_labels], f)
+        with open(splits_dir / str(p) / "test.pt", "wb") as f:
+            torch.save([test_imgs, test_labels], f)
 
     return splits_dir
 
 
 def cifar10Transformation():
     normalize = transforms.Normalize(mean=[x / 255.0 for x in [125.3, 123.0, 113.9]],
-                                                std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
+                                     std=[x / 255.0 for x in [63.0, 62.1, 66.7]])
     transform_train = transforms.Compose([
         transforms.ToTensor(),
         transforms.Lambda(lambda x: F.pad(
@@ -118,10 +117,11 @@ def cifar10Transformation():
         normalize])
     return transform_train, transform_test
 
+
 def cifar100Transformation():
     normalize = transforms.Normalize(mean=[0.5070751592371323, 0.48654887331495095, 0.4409178433670343],
-                                             std=[0.2673342858792401, 0.2564384629170883, 0.27615047132568404])
-            
+                                     std=[0.2673342858792401, 0.2564384629170883, 0.27615047132568404])
+
     transform_train = transforms.Compose([
         # transforms.ToPILImage(),
         transforms.RandomCrop(32, padding=4),
@@ -135,6 +135,8 @@ def cifar100Transformation():
         transforms.ToTensor(),
         normalize])
     return transform_train, transform_test
+
+
 class TorchVision_FL(VisionDataset):
     """This is just a trimmed down version of torchvision.datasets.MNIST.
 
@@ -144,11 +146,11 @@ class TorchVision_FL(VisionDataset):
     """
 
     def __init__(
-        self,
-        path_to_data=None,
-        data=None,
-        targets=None,
-        transform: Optional[Callable] = None,
+            self,
+            path_to_data=None,
+            data=None,
+            targets=None,
+            transform: Optional[Callable] = None,
     ) -> None:
         path = path_to_data.parent if path_to_data else None
         super(TorchVision_FL, self).__init__(path, transform=transform)
@@ -184,7 +186,6 @@ class TorchVision_FL(VisionDataset):
         return len(self.data)
 
 
-
 def getCIFAR100(path_to_data="./data"):
     """Downloads CIFAR100 dataset and generates unified training and test sets (they will
     be partitioned later using the LDA partitioning mechanism."""
@@ -207,6 +208,7 @@ def getCIFAR100(path_to_data="./data"):
         root=path_to_data, train=False, transform=cifar100Transformation()[1]
     )
     return training_data, test_data, test_set
+
 
 def getCIFAR10(path_to_data="./data"):
     """Downloads CIFAR10 dataset and generates unified training and test sets (they will

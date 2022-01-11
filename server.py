@@ -14,12 +14,14 @@
 # ==============================================================================
 """Flower server."""
 
-
 import concurrent.futures
 import timeit
+from collections import OrderedDict
 from logging import DEBUG, INFO, WARNING
 from typing import Dict, List, Optional, Tuple, Union
 
+import numpy as np
+import torch
 from flwr.common import (
     Disconnect,
     EvaluateIns,
@@ -32,15 +34,12 @@ from flwr.common import (
     Weights,
     weights_to_parameters,
 )
-from flwr.common.logger import log
 from flwr.common import parameters_to_weights
+from flwr.common.logger import log
 from flwr.server.client_manager import ClientManager
 from flwr.server.client_proxy import ClientProxy
 from flwr.server.history import History
 from flwr.server.strategy import FedAvg, Strategy
-from collections import OrderedDict
-import numpy as np
-import torch 
 
 DEPRECATION_WARNING_EVALUATE = """
 DEPRECATION WARNING: Method
@@ -92,16 +91,26 @@ ReconnectResultsAndFailures = Tuple[
     List[Tuple[ClientProxy, Disconnect]], List[BaseException]
 ]
 
+
 def save_metrics(hist, path_to_save_metrics):
     accs_distributed = np.array([])
     accs_centralized = np.array([])
-    for (_,acc) in hist.metrics_distributed['accuracy']:
-        np.append(accs_distributed, acc)
-    for (_,acc) in hist.metrics_centralized['accuracy']:
-        np.append(accs_centralized,acc)
+    loss_distributed = np.array([])
+    loss_centralized = np.array([])
+    for (_, acc) in hist.metrics_distributed['accuracy']:
+        accs_distributed = np.append(accs_distributed, acc)
+    for (_, acc) in hist.metrics_centralized['accuracy']:
+        accs_centralized = np.append(accs_centralized, acc)
+    for (_, loss) in hist.losses_distributed:
+        loss_distributed = np.append(loss_distributed, loss)
+    for (_, loss) in hist.losses_centralized:
+        loss_centralized = np.append(loss_centralized, loss)
 
     np.save(path_to_save_metrics / "accs_distributed.npy", accs_distributed)
     np.save(path_to_save_metrics / "accs_centralized.npy", accs_centralized)
+    np.save(path_to_save_metrics / "loss_distributed.npy", loss_distributed)
+    np.save(path_to_save_metrics / "loss_centralized.npy", loss_centralized)
+
 
 def set_weights(model: torch.nn.ModuleList, weights: Weights) -> None:
     """Set model weights from a list of NumPy ndarrays."""
@@ -113,17 +122,20 @@ def set_weights(model: torch.nn.ModuleList, weights: Weights) -> None:
     )
     model.load_state_dict(state_dict, strict=True)
 
+
 def save_model(parameters, model, path_to_save_metrics):
     final_weights = parameters_to_weights(parameters)
     set_weights(model, final_weights)
-    
+
     torch.save(model.state_dict(), path_to_save_metrics / "final_model.pt")
+
 
 class Server:
     """Flower server."""
 
     def __init__(
-        self, client_manager: ClientManager, strategy: Optional[Strategy] = None, path_to_save_metrics = None, model = None
+            self, client_manager: ClientManager, strategy: Optional[Strategy] = None, path_to_save_metrics=None,
+            model=None
     ) -> None:
         self._client_manager: ClientManager = client_manager
         self.parameters: Parameters = Parameters(
@@ -140,8 +152,6 @@ class Server:
     def client_manager(self) -> ClientManager:
         """Return ClientManager."""
         return self._client_manager
-
-    
 
     # pylint: disable=too-many-locals
     def fit(self, num_rounds: int) -> History:
@@ -209,7 +219,7 @@ class Server:
         return history
 
     def evaluate(
-        self, rnd: int
+            self, rnd: int
     ) -> Optional[Tuple[Optional[float], EvaluateResultsAndFailures]]:
         """Validate current global model on a number of clients."""
         log(WARNING, DEPRECATION_WARNING_EVALUATE)
@@ -221,7 +231,7 @@ class Server:
         return loss, results_and_failures
 
     def evaluate_round(
-        self, rnd: int
+            self, rnd: int
     ) -> Optional[
         Tuple[Optional[float], Dict[str, Scalar], EvaluateResultsAndFailures]
     ]:
@@ -271,7 +281,7 @@ class Server:
         return loss_aggregated, metrics_aggregated, (results, failures)
 
     def fit_round(
-        self, rnd: int
+            self, rnd: int
     ) -> Optional[
         Tuple[Optional[Parameters], Dict[str, Scalar], FitResultsAndFailures]
     ]:
@@ -365,7 +375,7 @@ def shutdown(clients: List[ClientProxy]) -> ReconnectResultsAndFailures:
 
 
 def reconnect_client(
-    client: ClientProxy, reconnect: Reconnect
+        client: ClientProxy, reconnect: Reconnect
 ) -> Tuple[ClientProxy, Disconnect]:
     """Instruct a single client to disconnect and (optionally) reconnect
     later."""
@@ -374,7 +384,7 @@ def reconnect_client(
 
 
 def fit_clients(
-    client_instructions: List[Tuple[ClientProxy, FitIns]]
+        client_instructions: List[Tuple[ClientProxy, FitIns]]
 ) -> FitResultsAndFailures:
     """Refine parameters concurrently on all selected clients."""
     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -403,7 +413,7 @@ def fit_client(client: ClientProxy, ins: FitIns) -> Tuple[ClientProxy, FitRes]:
 
 
 def evaluate_clients(
-    client_instructions: List[Tuple[ClientProxy, EvaluateIns]]
+        client_instructions: List[Tuple[ClientProxy, EvaluateIns]]
 ) -> EvaluateResultsAndFailures:
     """Evaluate parameters concurrently on all selected clients."""
     with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -426,7 +436,7 @@ def evaluate_clients(
 
 
 def evaluate_client(
-    client: ClientProxy, ins: EvaluateIns
+        client: ClientProxy, ins: EvaluateIns
 ) -> Tuple[ClientProxy, EvaluateRes]:
     """Evaluate parameters on a single client."""
     evaluate_res = client.evaluate(ins)
