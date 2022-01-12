@@ -4,10 +4,38 @@ This repository is a reproducibility study of [Model-Contrastive Federated Learn
 ## Setup
 
 Installation requirements:
+- `poetry`
+- `python > 3.7`
+
+**Poetry**
+```bash
+curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
+```
+
+To configure current shell:
+```bash
+source $HOME/.poetry/env
+```
+
+Go into project directory, and install dependencies:
+```bash
+cd MOON/
+poetry install
+```
+
+Activate virtual environment created by poetry:
+```bash
+poetry shell
+```
 
 ## Run experiments
 
-To train the model(s) in the paper, run this command:
+We have provided shell scripts that run the experiments. They are in the `run_scripts/` directory.
+For example, to run the basic experiment (comparing FedAvg and Moon accuracies on 10 clients, 100 rounds):
+```bash
+./run_experiments/basic_experiment.sh
+```
+
 
 ## Parameters
 
